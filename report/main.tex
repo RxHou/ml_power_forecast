@@ -1,0 +1,177 @@
+\documentclass[12pt,a4paper]{ctexart}
+
+\usepackage[margin=2.4cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{xcolor}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue
+}
+
+\title{家庭电力消耗多变量时间序列预测}
+\author{作者：侯嘉睿 \quad 研究领域：机器学习与智能电力负荷预测}
+\date{2026 年 6 月}
+
+\begin{document}
+\maketitle
+
+\noindent\textbf{Github 链接：} 待代码上传 Github 后填写。
+
+\section{问题介绍}
+
+随着智能家居与物联网技术的发展，家庭电力消耗监测与预测可以帮助居民理解自身用电行为、发现异常用电，并为电力公司负荷调度和供需平衡提供参考。家庭用电受到季节、日期、生活习惯和电器使用模式等多种因素影响，具有明显的时间依赖和波动性，因此适合建模为多变量时间序列预测问题。
+
+本实验使用 UCI Machine Learning Repository 公开的 Individual Household Electric Power Consumption 数据集。该数据记录了法国一户家庭从 2006 年 12 月 16 日至 2010 年 11 月 26 日的分钟级用电情况，包括全局有功功率、无功功率、电压、电流强度以及三个分表能耗。原始数据共有 2,075,259 条记录，其中存在 25,979 条缺失记录。根据课程要求，本实验将分钟级数据聚合为天级数据，共得到 1,442 天样本。
+
+聚合规则如下：\texttt{global\_active\_power}、\texttt{global\_reactive\_power}、\texttt{sub\_metering\_1}、\texttt{sub\_metering\_2}、\texttt{sub\_metering\_3} 按天求和；\texttt{voltage} 和 \texttt{global\_intensity} 按天求平均。缺失日期通过时间插值并结合前向、后向填充处理。另根据课程提示计算剩余分表能耗：
+\begin{align*}
+\text{sub\_metering\_remainder} &=
+\text{global\_active\_power}\times \frac{1000}{60}\\
+&\quad - (\text{sub\_metering\_1}
++\text{sub\_metering\_2}
++\text{sub\_metering\_3}).
+\end{align*}
+此外，为了帮助模型表达周期性，本实验加入星期和一年中日期的正余弦编码特征。
+
+预测任务为：基于过去 90 天的多变量特征，分别预测未来 90 天和未来 365 天的每日总有功功率。两个预测长度分别训练独立模型，避免短期和长期任务之间共享模型参数。数据集按时间顺序构造滑动窗口，最后 20\% 窗口作为测试集，其余窗口再划分训练集和验证集。所有划分均保持时间顺序，避免随机划分造成未来信息泄漏。
+
+\section{模型}
+
+\subsection{LSTM 模型}
+
+LSTM 通过门控机制缓解普通循环神经网络在长序列上的梯度衰减问题，适合建模用电序列中的顺序依赖。本实验将过去 90 天的多变量输入送入两层 LSTM，取最后一层最后时刻的隐藏状态作为历史序列表示，再经过多层感知机一次性输出未来 $H$ 天的预测结果，其中 $H\in\{90,365\}$。
+
+\begin{verbatim}
+X = past 90-day multivariate sequence
+h = LSTM(X).last_hidden_state
+y_hat = MLP(h)
+\end{verbatim}
+
+\subsection{Transformer 模型}
+
+Transformer 使用自注意力机制建模不同时间位置之间的依赖关系。实验中先将每日特征线性映射到隐藏维度，再加入正弦位置编码，通过 Transformer Encoder 得到时间序列表示。最后对时间维度进行平均池化，并使用全连接层输出未来功率曲线。
+
+\begin{verbatim}
+Z = Linear(X) + PositionalEncoding
+E = TransformerEncoder(Z)
+h = MeanPool(E)
+y_hat = MLP(h)
+\end{verbatim}
+
+\subsection{改进模型：CNN-Transformer}
+
+自提出模型采用 CNN-Transformer 结构。该模型首先使用一维卷积层提取相邻日期之间的局部模式，例如短期波动、周周期变化和局部趋势；随后使用 Transformer Encoder 建模较长范围的依赖关系；最后通过注意力池化聚合不同日期的信息。该结构的设计动机是：家庭用电既存在短期连续性，也存在季节性和长期趋势，卷积前端可以为 Transformer 提供更稳定的局部特征。
+
+\begin{verbatim}
+Z_local = Conv1D(X)
+Z = Z_local + PositionalEncoding
+E = TransformerEncoder(Z)
+h = AttentionPool(E)
+y_hat = MLP(h)
+\end{verbatim}
+
+\section{结果与分析}
+
+实验使用均方误差（MSE）和平均绝对误差（MAE）作为评价指标。每个模型在每种预测长度下使用 5 个随机种子独立训练，随机种子为 42、43、44、45、46。训练设备为 CPU，最大训练轮数为 20，使用早停策略。表中结果为 5 次实验的均值和标准差。
+
+\subsection{短期预测：未来 90 天}
+
+\begin{table}[H]
+\centering
+\caption{未来 90 天预测结果}
+\begin{tabular}{lrrrr}
+\toprule
+模型 & MSE mean & MSE std & MAE mean & MAE std \\
+\midrule
+LSTM & 157627.27 & 1762.05 & 293.33 & 2.65 \\
+Transformer & 171443.32 & 6126.89 & 316.48 & 9.24 \\
+CNN-Transformer & 174413.49 & 8781.44 & 316.40 & 11.43 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.98\textwidth}
+  \includegraphics[width=\textwidth]{figures/lstm_h90_seed42.png}
+  \caption{LSTM，未来 90 天}
+\end{subfigure}
+\begin{subfigure}{0.98\textwidth}
+  \includegraphics[width=\textwidth]{figures/transformer_h90_seed42.png}
+  \caption{Transformer，未来 90 天}
+\end{subfigure}
+\begin{subfigure}{0.98\textwidth}
+  \includegraphics[width=\textwidth]{figures/cnn_transformer_h90_seed42.png}
+  \caption{CNN-Transformer，未来 90 天}
+\end{subfigure}
+\caption{短期预测中预测值与真实值的对比曲线，展示 seed=42 的测试窗口结果。}
+\end{figure}
+
+短期预测中，LSTM 的 MSE 和 MAE 均最低，说明在本实验设置下，循环结构对最近 90 天历史信息的编码更稳定。Transformer 和 CNN-Transformer 的预测曲线整体更平滑，能反映总体水平，但对真实曲线中的尖峰和低谷响应不足。因此，当测试集中出现异常低用电或高峰用电时，MSE 会明显增大。CNN-Transformer 在短期任务中的表现没有超过基础模型，可能是因为训练数据量有限，而卷积和注意力模块增加了模型复杂度，导致 20 轮 CPU 训练下尚未充分收敛。
+
+\subsection{长期预测：未来 365 天}
+
+\begin{table}[H]
+\centering
+\caption{未来 365 天预测结果}
+\begin{tabular}{lrrrr}
+\toprule
+模型 & MSE mean & MSE std & MAE mean & MAE std \\
+\midrule
+Transformer & 162738.04 & 1374.06 & 302.78 & 0.84 \\
+LSTM & 164592.31 & 2681.69 & 303.85 & 1.52 \\
+CNN-Transformer & 166347.88 & 4707.92 & 306.25 & 5.01 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}{0.98\textwidth}
+  \includegraphics[width=\textwidth]{figures/lstm_h365_seed42.png}
+  \caption{LSTM，未来 365 天}
+\end{subfigure}
+\begin{subfigure}{0.98\textwidth}
+  \includegraphics[width=\textwidth]{figures/transformer_h365_seed42.png}
+  \caption{Transformer，未来 365 天}
+\end{subfigure}
+\begin{subfigure}{0.98\textwidth}
+  \includegraphics[width=\textwidth]{figures/cnn_transformer_h365_seed42.png}
+  \caption{CNN-Transformer，未来 365 天}
+\end{subfigure}
+\caption{长期预测中预测值与真实值的对比曲线，展示 seed=42 的测试窗口结果。}
+\end{figure}
+
+长期预测中，Transformer 的 MSE 和 MAE 最低，且标准差最小，说明自注意力机制在建模年尺度趋势方面更稳定。从曲线可以观察到，模型能够学习到真实用电曲线中从冬季较高、夏季下降、秋冬回升的整体趋势。不过，三种模型都对日级随机波动和极端值预测不足，预测曲线明显比真实曲线平滑。这是多步直接预测任务中的常见现象：模型更容易学习平均趋势，而难以准确预测未来某一天的突发用电行为。
+
+\subsection{三种方法比较}
+
+综合两类任务，LSTM 更适合短期预测，Transformer 更适合长期预测。CNN-Transformer 作为改进模型具有清晰的结构动机，但在本实验中并未取得最优性能。可能原因包括：第一，日级数据仅 1,442 条，经过 90 天输入和 365 天输出窗口构造后，可用长期训练样本较少；第二，模型复杂度提升后需要更长训练或更细致的超参数搜索；第三，用电数据中的尖峰和低谷往往由家庭行为触发，仅凭历史功率序列难以预测。虽然改进模型性能不佳，但其结果说明简单叠加卷积模块并不一定带来收益，模型改进需要结合数据规模、任务长度和训练稳定性共同分析。
+
+\section{讨论}
+
+本实验完成了从分钟级原始数据清洗、天级聚合、滑动窗口构造到多模型训练和评估的完整流程。实验结果表明，短期预测和长期预测的最佳模型并不相同。短期预测更依赖最近历史状态，LSTM 的门控记忆机制表现较好；长期预测需要捕捉更长尺度的趋势，Transformer 的全局注意力机制更有优势。
+
+本实验也存在一些限制。首先，课程说明中提到可以融合天气数据，但本实验为了保证主流程完整，仅使用了原始用电变量和日期周期特征，未加入外部气象变量。其次，模型采用直接多步输出，虽然训练和比较方便，但容易产生平滑预测，难以捕捉极端波动。再次，受 CPU 训练时间限制，本实验使用 20 轮训练和早停策略，未进行大规模超参数搜索。
+
+后续可以从三个方向改进：一是加入天气、节假日等外部变量，提高对季节和行为变化的解释能力；二是尝试趋势-季节分解后再建模，降低原始序列波动带来的学习难度；三是为 CNN-Transformer 引入残差连接、多尺度卷积或更长训练轮数，使其局部特征提取能力更充分发挥。
+
+\section*{参考文献}
+
+\begin{enumerate}
+  \item UCI Machine Learning Repository. Individual household electric power consumption Dataset. \url{https://archive.ics.uci.edu/dataset/235/individual+household+electric+power+consumption}
+  \item Hochreiter, S., Schmidhuber, J. Long Short-Term Memory. Neural Computation, 1997.
+  \item Vaswani, A., Shazeer, N., Parmar, N., et al. Attention Is All You Need. NeurIPS, 2017.
+  \item 本报告文字组织和代码结构使用 ChatGPT/Codex 辅助完成，实验结果由本项目代码运行生成。
+\end{enumerate}
+
+\end{document}
