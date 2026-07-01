@@ -107,4 +107,4 @@ y_hat = MLP(h)
 
 [3] Vaswani, A., et al. Attention Is All You Need. NeurIPS, 2017.
 
-[4] 使用 ChatGPT/Codex 辅助撰写报告文字和组织代码结构，实验代码与结果由本项目运行生成。
+[4] 使用 ChatGPT/Codex 辅助撰写报告文字和组织代码结构，实验结果由本人运行代码生成。
