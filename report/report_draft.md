@@ -4,7 +4,7 @@
 
 研究领域：机器学习与智能电力负荷预测
 
-Github 链接：待提交代码后填写
+Github 链接：https://github.com/RxHou/ml_power_forecast
 
 ## 1. 问题介绍
 
