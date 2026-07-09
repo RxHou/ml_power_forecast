@@ -9,10 +9,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from power_forecast.config import RAW_DIR, RAW_TXT_PATH, RAW_ZIP_PATH, UCI_ZIP_URLS
+from power_forecast.config import WEATHER_RAW_PATH, WEATHER_ZIP_URL
 
 
 def main() -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_weather_dataset()
 
     if RAW_TXT_PATH.exists():
         print(f"Raw text file already exists: {RAW_TXT_PATH}")
@@ -46,6 +48,16 @@ def main() -> None:
         )
 
     print(f"Ready: {RAW_TXT_PATH}")
+
+
+def ensure_weather_dataset() -> None:
+    if WEATHER_RAW_PATH.exists() and WEATHER_RAW_PATH.stat().st_size > 0:
+        print(f"Weather file already exists: {WEATHER_RAW_PATH}")
+        return
+
+    print(f"Downloading Météo-France monthly weather data from {WEATHER_ZIP_URL}")
+    download_with_curl(WEATHER_ZIP_URL, WEATHER_RAW_PATH)
+    print(f"Saved weather file to {WEATHER_RAW_PATH}")
 
 
 def download_with_curl(url: str, output_path: Path) -> None:

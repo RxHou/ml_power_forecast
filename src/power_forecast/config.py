@@ -23,6 +23,11 @@ UCI_ZIP_URLS = [
 UCI_ZIP_URL = UCI_ZIP_URLS[0]
 RAW_ZIP_PATH = RAW_DIR / "individual_household_power_consumption.zip"
 RAW_TXT_PATH = RAW_DIR / "household_power_consumption.txt"
+WEATHER_ZIP_URL = (
+    "https://meteofrance.s3.sbg.io.cloud.ovh.net/data/synchro_ftp/BASE/MENS/"
+    "MENSQ_75_previous-1950-2024.csv.gz"
+)
+WEATHER_RAW_PATH = RAW_DIR / "MENSQ_75_previous-1950-2024.csv.gz"
 DAILY_CSV_PATH = PROCESSED_DIR / "daily_power.csv"
 SUMMARY_JSON_PATH = PROCESSED_DIR / "preprocess_summary.json"
 
@@ -56,4 +61,9 @@ FEATURE_COLUMNS = [
     "day_of_week_cos",
     "day_of_year_sin",
     "day_of_year_cos",
+    "weather_rr_mm",
+    "weather_rain_days_ge_1mm",
+    "weather_rain_days_ge_5mm",
+    "weather_rain_days_ge_10mm",
+    "weather_fog_days",
 ]

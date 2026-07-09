@@ -33,6 +33,11 @@ def main() -> None:
     daily["day_of_week_cos"] = np.cos(2 * np.pi * daily.index.dayofweek / 7)
     daily["day_of_year_sin"] = np.sin(2 * np.pi * daily.index.dayofyear / 365.25)
     daily["day_of_year_cos"] = np.cos(2 * np.pi * daily.index.dayofyear / 365.25)
+    daily["weather_rr_mm"] = 40 + 20 * np.sin(2 * np.pi * daily.index.month / 12)
+    daily["weather_rain_days_ge_1mm"] = 8 + (daily.index.month % 3)
+    daily["weather_rain_days_ge_5mm"] = 3 + (daily.index.month % 2)
+    daily["weather_rain_days_ge_10mm"] = daily.index.month % 2
+    daily["weather_fog_days"] = daily.index.month % 4
 
     data = build_window_data(daily, horizon=90)
     assert data.x_train.ndim == 3
